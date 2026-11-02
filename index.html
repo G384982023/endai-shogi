@@ -265,6 +265,18 @@ h1 { font-family: var(--font-piece); font-weight: 800; letter-spacing: .08em; ma
     </div>
     <p>九路の本将棋を、離れた相手とそれぞれの端末で指せます。対局を作ると4文字の対局コードが出るので、それを相手に伝えてください。対局を作った人がこのページを閉じると、対局は止まります。</p>
 
+    <div class="panel">
+      <h2>ルール</h2>
+      <div class="row">
+        <span class="note">トライ</span>
+        <div class="seg" role="group" aria-label="トライ">
+          <button type="button" id="tryOff" aria-pressed="true">なし</button>
+          <button type="button" id="tryOn" aria-pressed="false">あり</button>
+        </div>
+      </div>
+      <p class="note">トライありにすると、自分の王が相手の王の最初のマス(先手なら５一、後手なら５九)に入った時点で勝ちになります。取られるマスには入れません。</p>
+    </div>
+
     <div class="panel" id="onlinePanel">
       <h2>対局を作る</h2>
       <div class="row">
@@ -326,6 +338,7 @@ h1 { font-family: var(--font-piece); font-weight: 800; letter-spacing: .08em; ma
           <dt>対局コード</dt><dd class="code" id="roomCode"></dd>
           <dt>先手 ▲</dt><dd id="seatB"></dd>
           <dt>後手 △</dt><dd id="seatW"></dd>
+          <dt>トライ</dt><dd id="ruleTry"></dd>
         </dl>
         <div class="row" id="seatBtns"></div>
         <div class="note" id="roomNote"></div>
@@ -401,8 +414,8 @@ h1 { font-family: var(--font-piece); font-weight: 800; letter-spacing: .08em; ma
     return b;
   }
 
-  function newGame() {
-    return { board: initialBoard(), hands: { b: emptyHand(), w: emptyHand() }, turn: "b", kifu: [], last: null, result: null, n: 0 };
+  function newGame(tr = false) {
+    return { board: initialBoard(), hands: { b: emptyHand(), w: emptyHand() }, turn: "b", kifu: [], last: null, result: null, n: 0, tr };
   }
 
   function vectors(pc) {
@@ -534,7 +547,11 @@ h1 { font-family: var(--font-piece); font-weight: 800; letter-spacing: .08em; ma
     const rec = notate(g, mv);
     const ng = apply(g, mv);
     ng.kifu = g.kifu.concat(rec);
-    if (legalMoves(ng).length === 0) ng.result = { winner: g.turn, reason: "詰み" };
+    // 合法手しか来ないので、玉が入れた時点でそのマスは取られない
+    const tryTo = g.turn === "b" ? 4 : 76;
+    const moved = ng.board[mv.to];
+    if (g.tr && mv.to === tryTo && moved && moved.t === "K") ng.result = { winner: g.turn, reason: "トライ" };
+    else if (legalMoves(ng).length === 0) ng.result = { winner: g.turn, reason: "詰み" };
     return ng;
   }
 
@@ -542,13 +559,13 @@ h1 { font-family: var(--font-piece); font-weight: 800; letter-spacing: .08em; ma
   const enc = (p) => (p ? p.o + (p.p ? "+" : "") + p.t : "");
   const dec = (s) => (s ? { o: s[0], p: s[1] === "+", t: s[s.length - 1] } : null);
   function toDoc(g) {
-    return { board: g.board.map(enc), hands: g.hands, turn: g.turn, kifu: g.kifu, last: g.last, result: g.result, n: g.n };
+    return { board: g.board.map(enc), hands: g.hands, turn: g.turn, kifu: g.kifu, last: g.last, result: g.result, n: g.n, tr: !!g.tr };
   }
   function fromDoc(d) {
     return {
       board: (d.board || []).map(dec),
       hands: { b: { ...emptyHand(), ...(d.hands && d.hands.b) }, w: { ...emptyHand(), ...(d.hands && d.hands.w) } },
-      turn: d.turn || "b", kifu: d.kifu || [], last: d.last || null, result: d.result || null, n: d.n || 0,
+      turn: d.turn || "b", kifu: d.kifu || [], last: d.last || null, result: d.result || null, n: d.n || 0, tr: !!d.tr,
       sb: d.sb || null, sw: d.sw || null,
     };
   }
@@ -558,7 +575,7 @@ h1 { font-family: var(--font-piece); font-weight: 800; letter-spacing: .08em; ma
   const S = {
     mode: "lobby", db: null, user: null, uid: null, canWrite: true,
     code: null, g: null, mySide: null, unsub: null, sel: null, pending: null, legal: null, legalN: -1,
-    names: {}, pickSide: "b",
+    names: {}, pickSide: "b", pickTry: false,
   };
 
   const bottomSide = () => (S.mode === "online" && S.mySide === "w" ? "w" : "b");
@@ -709,7 +726,7 @@ h1 { font-family: var(--font-piece); font-weight: 800; letter-spacing: .08em; ma
     if (g.result) {
       res.hidden = false;
       const w = g.result.winner === "b" ? "先手" : "後手";
-      res.textContent = (g.result.reason === "投了" ? "まで、" + (g.result.winner === "b" ? "後手" : "先手") + "の投了で" : "まで、詰みで") + w + "の勝ち";
+      res.textContent = (g.result.reason === "投了" ? "まで、" + (g.result.winner === "b" ? "後手" : "先手") + "の投了で" : "まで、" + g.result.reason + "で") + w + "の勝ち";
     } else res.hidden = true;
 
     const k = $("kifu");
@@ -814,6 +831,7 @@ h1 { font-family: var(--font-piece); font-weight: 800; letter-spacing: .08em; ma
     const seatText = (id) => (id === S.uid ? "あなた" : id ? (S.names[id] || "参加済み") : "空き");
     $("seatB").textContent = seatText(g.sb);
     $("seatW").textContent = seatText(g.sw);
+    $("ruleTry").textContent = g.tr ? "あり" : "なし";
     const btns = [];
     if (!S.mySide && S.canWrite) {
       if (!g.sb) btns.push(seatBtn("b", "先手で参加"));
@@ -991,7 +1009,7 @@ h1 { font-family: var(--font-piece); font-weight: 800; letter-spacing: .08em; ma
 
   $("againBtn").addEventListener("click", async () => {
     const g = S.g;
-    const ng = newGame();
+    const ng = newGame(g.tr);
     if (S.mode === "local") { S.g = ng; S.sel = null; render(); return; }
     const doc = { ...toDoc(ng), sb: g.sw || null, sw: g.sb || null };
     try { await S.db.doc("games/" + S.code).update(doc); } catch (_) {
@@ -1008,7 +1026,7 @@ h1 { font-family: var(--font-piece); font-weight: 800; letter-spacing: .08em; ma
   });
 
   $("localBtn").addEventListener("click", () => {
-    S.mode = "local"; S.g = newGame(); S.mySide = null; S.sel = null;
+    S.mode = "local"; S.g = newGame(S.pickTry); S.mySide = null; S.sel = null;
     $("lobby").hidden = true; $("game").hidden = false;
     render();
   });
@@ -1017,6 +1035,13 @@ h1 { font-family: var(--font-piece); font-weight: 800; letter-spacing: .08em; ma
     $(id).addEventListener("click", () => {
       S.pickSide = side;
       for (const b of ["pickB", "pickW", "pickR"]) $(b).setAttribute("aria-pressed", String(b === id));
+    });
+  }
+
+  for (const [id, on] of [["tryOff", false], ["tryOn", true]]) {
+    $(id).addEventListener("click", () => {
+      S.pickTry = on;
+      for (const b of ["tryOff", "tryOn"]) $(b).setAttribute("aria-pressed", String(b === id));
     });
   }
 
@@ -1037,7 +1062,7 @@ h1 { font-family: var(--font-piece); font-weight: 800; letter-spacing: .08em; ma
       }
       if (!code) throw new Error("no code");
       const side = S.pickSide === "r" ? (Math.random() < .5 ? "b" : "w") : S.pickSide;
-      const doc = { ...toDoc(newGame()), sb: side === "b" ? S.uid : null, sw: side === "w" ? S.uid : null, created: Date.now() };
+      const doc = { ...toDoc(newGame(S.pickTry)), sb: side === "b" ? S.uid : null, sw: side === "w" ? S.uid : null, created: Date.now() };
       await S.db.doc("games/" + code).set(doc);
       openRoom(code);
     } catch (err) {
