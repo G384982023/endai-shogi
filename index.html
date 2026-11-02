@@ -113,6 +113,10 @@ h1 { font-family: var(--font-piece); font-weight: 800; letter-spacing: .08em; ma
 .status.myturn.check { background: var(--alert); }
 @keyframes nudge { 50% { transform: scale(1.08); } }
 .hand.active { box-shadow: 0 0 0 3px var(--mine); }
+#board.myturn { box-shadow: 0 0 0 4px var(--mine), 0 0 22px 6px rgba(47, 111, 214, .55); animation: glow 1.6s ease-in-out infinite; }
+@keyframes glow { 50% { box-shadow: 0 0 0 4px var(--mine), 0 0 34px 12px rgba(47, 111, 214, .35); } }
+#board .arrow { position: absolute; left: 6px; top: 6px; width: calc(var(--cell) * 9); height: calc(var(--cell) * 9); pointer-events: none; overflow: visible; }
+#board .arrow path { fill: var(--last-edge); opacity: .7; }
 
 .hand {
   display: flex; gap: 4px; align-items: center; min-height: calc(var(--cell) + 8px);
@@ -134,7 +138,9 @@ h1 { font-family: var(--font-piece); font-weight: 800; letter-spacing: .08em; ma
 #board {
   grid-row: 2; grid-column: 1;
   display: grid; grid-template-columns: repeat(9, var(--cell)); grid-template-rows: repeat(9, var(--cell));
+  position: relative;
   background: var(--wood); padding: 6px; border-radius: 12px; touch-action: none;
+  transition: box-shadow .3s ease;
   box-shadow: 0 1px 0 rgba(0,0,0,.08), 0 6px 18px rgba(40, 28, 10, .18);
   background-image: radial-gradient(circle at 50% 50%, var(--wood-line) 2.2px, transparent 2.6px);
   background-size: calc(var(--cell) * 3) calc(var(--cell) * 3);
@@ -147,10 +153,8 @@ h1 { font-family: var(--font-piece); font-weight: 800; letter-spacing: .08em; ma
 .cell:nth-child(9n+1) { border-left: 1px solid var(--wood-line); }
 .cell:nth-child(-n+9) { border-top: 1px solid var(--wood-line); }
 .cell.last { background: var(--last); box-shadow: inset 0 0 0 3px var(--last-edge); }
-.cell.lastfrom { box-shadow: inset 0 0 0 2px var(--last-edge); background-image: radial-gradient(circle, var(--last-edge) 0 14%, transparent 15%); }
+.cell.lastfrom { box-shadow: inset 0 0 0 2px var(--last-edge); }
 .cell.last .piece { box-shadow: 0 0 0 3px var(--last-edge), 0 0 14px 4px var(--last-edge); }
-.cell.arrive .piece { animation: arrive .5s ease 3; }
-@keyframes arrive { 50% { scale: 1.18; } }
 .cell.sel { background: var(--sel); }
 .cell.hint { background: var(--hint-fill); cursor: pointer; }
 .cell.hint::after {
@@ -338,7 +342,7 @@ h1 { font-family: var(--font-piece); font-weight: 800; letter-spacing: .08em; ma
           <span data-t="S">銀(たて)</span><span data-t="N">桂馬(ばね)</span><span data-t="L">香車(や)</span><span data-t="P">歩(あしあと)</span>
         </div>
         <p class="note">駒を押すと、進めるマスが黄色く光ります。光ったマスを押すか、駒を指でつまんでそこまで運ぶと進めます。</p>
-        <p class="note"><b>青いふちが自分の駒</b>、こげ茶のふちで少しくすんだ色が相手の駒です。相手が最後に動かした駒は、オレンジの枠で囲み、動く前のマスに点を付けます。</p>
+        <p class="note"><b>青いふちが自分の駒</b>、こげ茶のふちで少しくすんだ色が相手の駒です。最後に動いた駒はオレンジに光り、動く前のマスから矢印が出ます。自分の番のあいだは盤のまわりが青く光ります。</p>
         <p class="note">赤い★の駒は「成った」駒です。相手の陣地(奥の3段)に入ると、駒を裏返して強くできます。</p>
       </div>
       <div class="panel">
@@ -644,7 +648,7 @@ h1 { font-family: var(--font-piece); font-weight: 800; letter-spacing: .08em; ma
       }
     }
 
-    // 相手の指し手が届いたときだけ、動いた駒を数回ゆらす
+    // 相手の指し手が届いたときだけ、動いた駒を元のマスから滑らせる
     const arrive = S.mode === "online" && g.n !== S.shownN && g.turn === S.mySide;
     S.shownN = g.n;
     const cells = [];
@@ -662,13 +666,15 @@ h1 { font-family: var(--font-piece); font-weight: 800; letter-spacing: .08em; ma
         label += (pc.o === "b" ? " 先手の" : " 後手の") + (pc.p ? PRO_KANJI[pc.t] : KANJI[pc.t]);
       }
       c.setAttribute("aria-label", label);
-      if (g.last && g.last.to === i) c.classList.add("last", ...(arrive ? ["arrive"] : []));
+      if (g.last && g.last.to === i) c.classList.add("last");
       if (g.last && g.last.from === i) c.classList.add("lastfrom");
       if (S.sel && S.sel.from === i) c.classList.add(S.drag ? "lifted" : "sel");
       if (hints.has(i)) c.classList.add("hint", ...(pc ? ["cap"] : []));
       cells.push(c);
     }
     $("board").replaceChildren(...cells);
+    if (g.last && g.last.from != null) $("board").appendChild(arrowSvg(g.last.from, g.last.to, flip));
+    if (arrive && g.last) slideIn(g.last, flip);
 
     renderHand($("handTop"), other(bot), true);
     renderHand($("handBottom"), bot, false);
@@ -693,6 +699,7 @@ h1 { font-family: var(--font-piece); font-weight: 800; letter-spacing: .08em; ma
       if (S.mode === "online" && S.mySide === g.turn) st.classList.add("myturn");
     }
     const myTurn = S.mode === "online" && !g.result && g.sb && g.sw && S.mySide === g.turn;
+    $("board").classList.toggle("myturn", !!myTurn);
     document.title = (myTurn ? "● あなたの番 - " : "") + "縁台将棋";
     const live = !g.result && (S.mode === "local" || (g.sb && g.sw));
     $("handBottom").classList.toggle("active", !!live && g.turn === bot);
@@ -721,6 +728,46 @@ h1 { font-family: var(--font-piece); font-weight: 800; letter-spacing: .08em; ma
     $("againBtn").hidden = !g.result || !playing;
 
     renderRoom();
+  }
+
+  // 盤の座標(マスの中心)。後手側から見るときは180度回す
+  const at = (i, flip) => { const d = flip ? 80 - i : i; return [(d % 9) + .5, ((d / 9) | 0) + .5]; };
+
+  function arrowSvg(from, to, flip) {
+    const [x1, y1] = at(from, flip), [x2, y2] = at(to, flip);
+    const len = Math.hypot(x2 - x1, y2 - y1), ux = (x2 - x1) / len, uy = (y2 - y1) / len;
+    const w = .09, head = .3, hw = .22, gap = .4;
+    const bx = x2 - ux * (head + gap), by = y2 - uy * (head + gap);
+    const tx = x2 - ux * gap, ty = y2 - uy * gap;
+    const sx = x1 + ux * .2, sy = y1 + uy * .2;
+    const px = -uy, py = ux;
+    const pts = [
+      [sx + px * w, sy + py * w], [bx + px * w, by + py * w], [bx + px * hw, by + py * hw], [tx, ty],
+      [bx - px * hw, by - py * hw], [bx - px * w, by - py * w], [sx - px * w, sy - py * w],
+    ];
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("class", "arrow");
+    svg.setAttribute("viewBox", "0 0 9 9");
+    svg.setAttribute("aria-hidden", "true");
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", "M" + pts.map((p) => p.map((v) => v.toFixed(3)).join(" ")).join(" L") + " Z");
+    svg.appendChild(path);
+    return svg;
+  }
+
+  function slideIn(last, flip) {
+    const cell = $("board").querySelector('.cell[data-i="' + last.to + '"]');
+    const pc = cell && cell.querySelector(".piece");
+    if (!pc || !pc.animate) return;
+    if (last.from == null) {
+      pc.animate([{ scale: 1.6, opacity: 0 }, { scale: 1, opacity: 1 }], { duration: 350, easing: "ease-out" });
+      return;
+    }
+    const size = cell.getBoundingClientRect().width;
+    const [x1, y1] = at(last.from, flip), [x2, y2] = at(last.to, flip);
+    const dx = (x1 - x2) * size, dy = (y1 - y2) * size;
+    pc.animate([{ translate: dx + "px " + dy + "px", scale: 1.15 }, { translate: "0 0", scale: 1 }],
+      { duration: Math.min(700, 260 + Math.hypot(dx, dy) * .9), easing: "cubic-bezier(.3, .7, .3, 1)" });
   }
 
   function renderHand(el, side, up) {
