@@ -28,7 +28,10 @@
   --hint: rgba(232, 140, 20, .9);
   --hint-fill: rgba(255, 196, 61, .55);
   --sel: rgba(120, 170, 255, .55);
-  --last: rgba(255, 140, 160, .25);
+  --last: rgba(255, 150, 40, .45);
+  --last-edge: #e8730c;
+  --mine: #2f6fd6;
+  --theirs: #4a3a2c;
   --font-piece: "M PLUS Rounded 1c", "Hiragino Maru Gothic ProN", "Hiragino Sans", sans-serif;
   --font-ui: "M PLUS Rounded 1c", "Hiragino Maru Gothic ProN", "Hiragino Sans", sans-serif;
   --cell: min(calc((100vw - 56px) / 9.4), calc((100vh - 230px) / 11.2), 54px);
@@ -106,6 +109,10 @@ h1 { font-family: var(--font-piece); font-weight: 800; letter-spacing: .08em; ma
 .topbar { display: flex; gap: 12px; align-items: center; justify-content: space-between; width: 100%; flex-wrap: wrap; }
 .status { font-weight: 700; font-size: 1.05rem; }
 .status.check { color: var(--alert); }
+.status.myturn { background: var(--mine); color: #fff; padding: 6px 14px; border-radius: 999px; animation: nudge .6s ease 2; }
+.status.myturn.check { background: var(--alert); }
+@keyframes nudge { 50% { transform: scale(1.08); } }
+.hand.active { box-shadow: 0 0 0 3px var(--mine); }
 
 .hand {
   display: flex; gap: 4px; align-items: center; min-height: calc(var(--cell) + 8px);
@@ -139,7 +146,11 @@ h1 { font-family: var(--font-piece); font-weight: 800; letter-spacing: .08em; ma
 }
 .cell:nth-child(9n+1) { border-left: 1px solid var(--wood-line); }
 .cell:nth-child(-n+9) { border-top: 1px solid var(--wood-line); }
-.cell.last { background: var(--last); }
+.cell.last { background: var(--last); box-shadow: inset 0 0 0 3px var(--last-edge); }
+.cell.lastfrom { box-shadow: inset 0 0 0 2px var(--last-edge); background-image: radial-gradient(circle, var(--last-edge) 0 14%, transparent 15%); }
+.cell.last .piece { box-shadow: 0 0 0 3px var(--last-edge), 0 0 14px 4px var(--last-edge); }
+.cell.arrive .piece { animation: arrive .5s ease 3; }
+@keyframes arrive { 50% { scale: 1.18; } }
 .cell.sel { background: var(--sel); }
 .cell.hint { background: var(--hint-fill); cursor: pointer; }
 .cell.hint::after {
@@ -176,7 +187,9 @@ h1 { font-family: var(--font-piece); font-weight: 800; letter-spacing: .08em; ma
 .t-N { --tile: #c9f1da; }
 .t-L { --tile: #ffd9c4; }
 .t-P { --tile: #e8f6c8; }
-.piece.pro { color: var(--promoted); border-color: var(--promoted); }
+.piece.pro { color: var(--promoted); }
+.piece.mine { border: 3px solid var(--mine); }
+.piece.theirs { border: 3px solid var(--theirs); filter: saturate(.55) brightness(.93); }
 .piece.up { transform: rotate(180deg); }
 .cell.sel .piece { transform: translateY(-3px); box-shadow: 0 5px 0 var(--piece-edge); }
 .cell.sel .piece.up { transform: rotate(180deg) translateY(3px); }
@@ -325,7 +338,8 @@ h1 { font-family: var(--font-piece); font-weight: 800; letter-spacing: .08em; ma
           <span data-t="S">銀(たて)</span><span data-t="N">桂馬(ばね)</span><span data-t="L">香車(や)</span><span data-t="P">歩(あしあと)</span>
         </div>
         <p class="note">駒を押すと、進めるマスが黄色く光ります。光ったマスを押すか、駒を指でつまんでそこまで運ぶと進めます。</p>
-        <p class="note">赤いふちと★の駒は「成った」駒です。相手の陣地(奥の3段)に入ると、駒を裏返して強くできます。</p>
+        <p class="note"><b>青いふちが自分の駒</b>、こげ茶のふちで少しくすんだ色が相手の駒です。相手が最後に動かした駒は、オレンジの枠で囲み、動く前のマスに点を付けます。</p>
+        <p class="note">赤い★の駒は「成った」駒です。相手の陣地(奥の3段)に入ると、駒を裏返して強くできます。</p>
       </div>
       <div class="panel">
         <div class="result" id="result" hidden></div>
@@ -455,7 +469,7 @@ h1 { font-family: var(--font-piece); font-weight: 800; letter-spacing: .08em; ma
       board[mv.to] = { o: c, t: pc.t, p: pc.p || !!mv.promote };
       board[mv.from] = null;
     }
-    return { ...g, board, hands, turn: other(c), last: { to: mv.to }, n: g.n + 1 };
+    return { ...g, board, hands, turn: other(c), last: { to: mv.to, from: mv.from == null ? null : mv.from }, n: g.n + 1 };
   }
 
   // 王手放置にならない手だけを返す。uchi=false のときは打ち歩詰めの判定を省く(判定の中で呼ぶため)
@@ -597,7 +611,7 @@ h1 { font-family: var(--font-piece); font-weight: 800; letter-spacing: .08em; ma
 
   function pieceEl(pc, up) {
     const d = document.createElement("div");
-    d.className = "piece t-" + pc.t + (pc.p ? " pro" : "") + (up ? " up" : "");
+    d.className = "piece t-" + pc.t + (pc.p ? " pro" : "") + (up ? " up theirs" : " mine");
     d.insertAdjacentHTML("beforeend", artSvg(pc.t) + (pc.p ? STAR : ""));
     const { steps, slides } = vectors(pc);
     for (const [dx, dy] of slides) d.appendChild(mark("tri", DIR_NAME[dx + "," + dy]));
@@ -630,6 +644,9 @@ h1 { font-family: var(--font-piece); font-weight: 800; letter-spacing: .08em; ma
       }
     }
 
+    // 相手の指し手が届いたときだけ、動いた駒を数回ゆらす
+    const arrive = S.mode === "online" && g.n !== S.shownN && g.turn === S.mySide;
+    S.shownN = g.n;
     const cells = [];
     for (let d = 0; d < 81; d++) {
       const i = flip ? 80 - d : d;
@@ -645,7 +662,8 @@ h1 { font-family: var(--font-piece); font-weight: 800; letter-spacing: .08em; ma
         label += (pc.o === "b" ? " 先手の" : " 後手の") + (pc.p ? PRO_KANJI[pc.t] : KANJI[pc.t]);
       }
       c.setAttribute("aria-label", label);
-      if (g.last && g.last.to === i) c.classList.add("last");
+      if (g.last && g.last.to === i) c.classList.add("last", ...(arrive ? ["arrive"] : []));
+      if (g.last && g.last.from === i) c.classList.add("lastfrom");
       if (S.sel && S.sel.from === i) c.classList.add(S.drag ? "lifted" : "sel");
       if (hints.has(i)) c.classList.add("hint", ...(pc ? ["cap"] : []));
       cells.push(c);
@@ -657,7 +675,7 @@ h1 { font-family: var(--font-piece); font-weight: 800; letter-spacing: .08em; ma
 
     // 状態表示
     const st = $("status");
-    st.classList.remove("check");
+    st.classList.remove("check", "myturn");
     if (g.result) {
       st.textContent = "対局終了";
     } else if (S.mode === "online" && (!g.sb || !g.sw)) {
@@ -672,7 +690,13 @@ h1 { font-family: var(--font-piece); font-weight: 800; letter-spacing: .08em; ma
       else t = side + "の番です(観戦中)";
       st.textContent = (check ? "王手 ・ " : "") + t;
       if (check) st.classList.add("check");
+      if (S.mode === "online" && S.mySide === g.turn) st.classList.add("myturn");
     }
+    const myTurn = S.mode === "online" && !g.result && g.sb && g.sw && S.mySide === g.turn;
+    document.title = (myTurn ? "● あなたの番 - " : "") + "縁台将棋";
+    const live = !g.result && (S.mode === "local" || (g.sb && g.sw));
+    $("handBottom").classList.toggle("active", !!live && g.turn === bot);
+    $("handTop").classList.toggle("active", !!live && g.turn !== bot);
 
     const res = $("result");
     if (g.result) {
@@ -1011,6 +1035,7 @@ h1 { font-family: var(--font-piece); font-weight: 800; letter-spacing: .08em; ma
       S.g = g;
       S.mySide = g.sb === S.uid ? "b" : g.sw === S.uid ? "w" : null;
       if (changed) { S.sel = null; S.pending = null; $("promo").hidden = true; }
+      if (changed && g.n > 0 && !g.result && S.mySide === g.turn) chime();
       render();
       loadNames();
     }, () => {
@@ -1018,6 +1043,28 @@ h1 { font-family: var(--font-piece); font-weight: 800; letter-spacing: .08em; ma
       $("roomNote").textContent = "対局との接続が切れました。「戻る」から開き直してください。";
     });
   }
+
+  let audio = null;
+  function chime() {
+    try { navigator.vibrate && navigator.vibrate(120); } catch (_) {}
+    try {
+      audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+      const t0 = audio.currentTime;
+      for (const [f, dt] of [[660, 0], [880, .14]]) {
+        const o = audio.createOscillator(), gn = audio.createGain();
+        o.frequency.value = f;
+        gn.gain.setValueAtTime(.0001, t0 + dt);
+        gn.gain.exponentialRampToValueAtTime(.18, t0 + dt + .02);
+        gn.gain.exponentialRampToValueAtTime(.0001, t0 + dt + .25);
+        o.connect(gn).connect(audio.destination);
+        o.start(t0 + dt); o.stop(t0 + dt + .3);
+      }
+    } catch (_) {}
+  }
+  // iPhone は画面に触れたあとでないと音を出せないので、最初のタッチで準備しておく
+  document.addEventListener("pointerdown", () => {
+    try { audio = audio || new (window.AudioContext || window.webkitAudioContext)(); audio.resume(); } catch (_) {}
+  }, { once: true });
 
   async function claimSeat(side) {
     const ref = S.db.doc("games/" + S.code);
